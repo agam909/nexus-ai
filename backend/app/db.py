@@ -87,11 +87,17 @@ class Message(Base):
 
 
 _settings = get_settings()
+_connect_args: dict = {}
+if _settings.is_postgres:
+    # Neon / Render Postgres mandate TLS; asyncpg uses `ssl=True` (not `sslmode`).
+    _connect_args["ssl"] = True
+
 _engine = create_async_engine(
     _settings.normalized_db_url,
     echo=False,
     future=True,
     pool_pre_ping=True,
+    connect_args=_connect_args,
 )
 _SessionLocal = async_sessionmaker(_engine, expire_on_commit=False, class_=AsyncSession)
 

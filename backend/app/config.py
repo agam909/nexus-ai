@@ -58,13 +58,22 @@ class Settings(BaseSettings):
 
     @property
     def normalized_db_url(self) -> str:
-        """Render/Neon often hand out `postgres://` URLs; SQLAlchemy needs the
-        `postgresql+asyncpg://` driver."""
+        """Render/Neon hand out `postgres://...?sslmode=require` URLs.
+        SQLAlchemy needs the `postgresql+asyncpg://` driver, AND asyncpg does
+        not understand the `sslmode` query param (that's a psycopg2 thing) -
+        we strip it here and rely on `connect_args={'ssl': True}` in db.py."""
+        import re
         url = self.database_url
         if url.startswith("postgres://"):
             url = "postgresql+asyncpg://" + url[len("postgres://"):]
         elif url.startswith("postgresql://") and "+asyncpg" not in url:
             url = "postgresql+asyncpg://" + url[len("postgresql://"):]
+        # Drop sslmode=...  &  channel_binding=...  (psycopg-only params)
+        url = re.sub(r"[?&](sslmode|channel_binding)=[^&]*", "", url)
+        # Tidy any leftover dangling ? or & at the end
+        url = re.sub(r"[?&]+$", "", url)
+        # If we removed the only query and left a bare `?`, drop it
+        url = url.replace("?&", "?")
         return url
 
     def ensure_dirs(self) -> None:
