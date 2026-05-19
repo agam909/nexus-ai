@@ -1,8 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
-
+import 'api_client.dart';
 import 'chat_api_service.dart' show HttpException;
 
 class BackendStats {
@@ -51,17 +50,19 @@ class HealthInfo {
 }
 
 class StatsApiService {
-  StatsApiService({required this.baseUrl, http.Client? client})
-      : _client = client ?? http.Client();
+  StatsApiService({required ApiClient api}) : _api = api;
 
-  final String baseUrl;
-  final http.Client _client;
+  final ApiClient _api;
 
   Future<BackendStats> fetchStats({
     Duration timeout = const Duration(seconds: 8),
   }) async {
-    final res =
-        await _client.get(Uri.parse('$baseUrl/stats')).timeout(timeout);
+    final res = await _api.client
+        .get(_api.uri('/stats'), headers: _api.authOnlyHeaders)
+        .timeout(timeout);
+    if (res.statusCode == 401 || res.statusCode == 403) {
+      throw UnauthorizedException();
+    }
     if (res.statusCode != 200) {
       throw HttpException('Stats failed (${res.statusCode}): ${res.body}');
     }
@@ -70,12 +71,12 @@ class StatsApiService {
     );
   }
 
+  /// Public endpoint - no auth required.
   Future<HealthInfo> health({
     Duration timeout = const Duration(seconds: 5),
   }) async {
     try {
-      final res =
-          await _client.get(Uri.parse('$baseUrl/health')).timeout(timeout);
+      final res = await _api.client.get(_api.uri('/health')).timeout(timeout);
       if (res.statusCode != 200) return HealthInfo.offline;
       final j = jsonDecode(res.body) as Map<String, dynamic>;
       return HealthInfo(
@@ -87,6 +88,4 @@ class StatsApiService {
       return HealthInfo.offline;
     }
   }
-
-  void dispose() => _client.close();
 }

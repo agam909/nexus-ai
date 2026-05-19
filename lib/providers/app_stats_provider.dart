@@ -43,6 +43,20 @@ class AppStatsProvider extends ChangeNotifier {
     _poll = Timer.periodic(interval, (_) => refresh());
   }
 
+  void stopPolling() {
+    _poll?.cancel();
+    _poll = null;
+  }
+
+  void clearLocal() {
+    stopPolling();
+    _stats = BackendStats.empty;
+    _health = HealthInfo.offline;
+    _error = null;
+    _loading = false;
+    notifyListeners();
+  }
+
   @override
   void dispose() {
     _poll?.cancel();

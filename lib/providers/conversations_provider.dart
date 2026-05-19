@@ -59,4 +59,12 @@ class ConversationsProvider extends ChangeNotifier {
       notifyListeners();
     }
   }
+
+  void clearLocal() {
+    _items = const [];
+    _activeId = null;
+    _error = null;
+    _loading = false;
+    notifyListeners();
+  }
 }

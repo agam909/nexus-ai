@@ -157,4 +157,12 @@ class DocumentsProvider extends ChangeNotifier {
     }
     return null;
   }
+
+  /// Wipes all in-memory state so the next user starts fresh after logout.
+  void clearLocal() {
+    _docs.clear();
+    _lastSync = null;
+    _refreshing = false;
+    notifyListeners();
+  }
 }

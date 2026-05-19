@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../providers/app_stats_provider.dart';
+import '../providers/auth_provider.dart';
 import '../providers/chat_provider.dart';
 import '../providers/conversations_provider.dart';
 import '../providers/theme_provider.dart';
@@ -33,52 +34,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const _SectionTitle('Profile'),
-                Card(
-                  child: Padding(
-                    padding: const EdgeInsets.all(20),
-                    child: Row(
-                      children: [
-                        const CircleAvatar(
-                          radius: 28,
-                          backgroundColor: AppColors.cyan,
-                          child: Text('AG',
-                              style: TextStyle(
-                                  color: AppColors.midnight,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 18)),
-                        ),
-                        const SizedBox(width: 16),
-                        const Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('Agam',
-                                  style: TextStyle(
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w700)),
-                              SizedBox(height: 2),
-                              Text('AI Knowledge Operator',
-                                  style: TextStyle(fontSize: 13)),
-                            ],
-                          ),
-                        ),
-                        Consumer<AppStatsProvider>(
-                          builder: (_, s, __) => Chip(
-                            avatar: Icon(
-                              s.backendOnline
-                                  ? Icons.check_circle
-                                  : Icons.error_outline,
-                              size: 16,
-                              color: s.backendOnline
-                                  ? AppColors.cyan
-                                  : AppColors.danger,
+                Consumer<AuthProvider>(
+                  builder: (_, auth, __) {
+                    final user = auth.user;
+                    final initials = user?.initials ?? '?';
+                    final name = user?.name.isNotEmpty == true
+                        ? user!.name
+                        : (user?.email ?? 'Guest');
+                    final email = user?.email ?? '';
+                    return Card(
+                      child: Padding(
+                        padding: const EdgeInsets.all(20),
+                        child: Row(
+                          children: [
+                            CircleAvatar(
+                              radius: 28,
+                              backgroundColor: AppColors.cyan,
+                              child: Text(
+                                initials,
+                                style: const TextStyle(
+                                    color: AppColors.midnight,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 18),
+                              ),
                             ),
-                            label: Text(s.backendOnline ? 'Connected' : 'Offline'),
-                          ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name,
+                                    style: const TextStyle(
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w700),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    email,
+                                    style: const TextStyle(fontSize: 13),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Consumer<AppStatsProvider>(
+                              builder: (_, s, __) => Chip(
+                                avatar: Icon(
+                                  s.backendOnline
+                                      ? Icons.check_circle
+                                      : Icons.error_outline,
+                                  size: 16,
+                                  color: s.backendOnline
+                                      ? AppColors.cyan
+                                      : AppColors.danger,
+                                ),
+                                label: Text(
+                                    s.backendOnline ? 'Connected' : 'Offline'),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
-                  ),
+                      ),
+                    );
+                  },
                 ),
                 const SizedBox(height: 24),
                 const _SectionTitle('Appearance'),
@@ -148,7 +168,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 ? (s.health.groqConfigured
                                     ? 'Groq API key configured • LangChain RAG live'
                                     : 'Backend reachable but GROQ_API_KEY missing in backend/.env')
-                                : 'Backend is not reachable. Run backend\\run.ps1',
+                                : 'Backend is not reachable. Check your connection.',
                             style: TextStyle(
                                 color: scheme.onSurfaceVariant, fontSize: 12),
                           ),
@@ -211,13 +231,47 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
                 const SizedBox(height: 24),
+                const _SectionTitle('Account'),
+                Card(
+                  child: ListTile(
+                    leading: Icon(Icons.logout_rounded, color: scheme.error),
+                    title: const Text('Sign out'),
+                    subtitle: const Text(
+                        'Clear this device and return to the sign-in screen'),
+                    onTap: () async {
+                      final confirmed = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('Sign out?'),
+                          content: const Text(
+                              'You will need to sign in again to access your knowledge base on this device. Your data on the server is preserved.'),
+                          actions: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('Cancel'),
+                            ),
+                            FilledButton(
+                              onPressed: () => Navigator.pop(ctx, true),
+                              style: FilledButton.styleFrom(
+                                  backgroundColor: scheme.error),
+                              child: const Text('Sign out'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirmed != true || !context.mounted) return;
+                      await context.read<AuthProvider>().logout();
+                    },
+                  ),
+                ),
+                const SizedBox(height: 24),
                 const _SectionTitle('About'),
                 Card(
                   child: ListTile(
                     leading: Icon(Icons.info_outline_rounded,
                         color: scheme.primary),
                     title: const Text('Nexus AI'),
-                    subtitle: const Text('Version 0.1.0 • RAG client'),
+                    subtitle: const Text('Version 0.2.0 • Cloud RAG client'),
                   ),
                 ),
                 const SizedBox(height: 32),

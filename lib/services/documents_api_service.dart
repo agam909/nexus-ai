@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
+import 'api_client.dart';
 import 'chat_api_service.dart' show HttpException;
 
 class UploadResult {
@@ -18,21 +19,11 @@ class UploadResult {
   });
 }
 
-/// Talks to the FastAPI backend's document endpoints.
-///
-/// Expected backend contract:
-///   POST {baseUrl}/upload   (multipart/form-data, field name: "file")
-///   Resp: { "id": "...", "file_name": "...", "chunks": N, ... }
 class DocumentsApiService {
-  DocumentsApiService({required this.baseUrl, http.Client? client})
-      : _client = client ?? http.Client();
+  DocumentsApiService({required ApiClient api}) : _api = api;
 
-  final String baseUrl;
-  final http.Client _client;
+  final ApiClient _api;
 
-  /// Uploads [filePath] to `/upload`, streaming bytes and reporting
-  /// upload progress (0..1) via [onProgress]. The Future completes once
-  /// the backend finishes indexing and returns its JSON response.
   Future<UploadResult> uploadFile({
     required String filePath,
     String? fileName,
@@ -46,8 +37,8 @@ class DocumentsApiService {
     final length = await file.length();
     final name = fileName ?? p.basename(filePath);
 
-    final uri = Uri.parse('$baseUrl/upload');
-    final req = http.MultipartRequest('POST', uri);
+    final req = http.MultipartRequest('POST', _api.uri('/upload'));
+    _api.authOnlyHeaders.forEach((k, v) => req.headers[k] = v);
 
     final stream = _countingStream(
       file.openRead(),
@@ -59,17 +50,16 @@ class DocumentsApiService {
       },
     );
 
-    req.files.add(
-      http.MultipartFile('file', stream, length, filename: name),
-    );
+    req.files.add(http.MultipartFile('file', stream, length, filename: name));
 
-    final streamed = await _client.send(req).timeout(timeout);
+    final streamed = await _api.client.send(req).timeout(timeout);
     final res = await http.Response.fromStream(streamed);
 
+    if (res.statusCode == 401 || res.statusCode == 403) {
+      throw UnauthorizedException();
+    }
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw HttpException(
-        'Upload failed (${res.statusCode}): ${res.body}',
-      );
+      throw HttpException('Upload failed (${res.statusCode}): ${res.body}');
     }
 
     Map<String, dynamic> json = const {};
@@ -77,7 +67,7 @@ class DocumentsApiService {
       try {
         final decoded = jsonDecode(res.body);
         if (decoded is Map<String, dynamic>) json = decoded;
-      } catch (_) {/* tolerate non-JSON success bodies */}
+      } catch (_) {}
     }
 
     return UploadResult(
@@ -90,13 +80,14 @@ class DocumentsApiService {
   Future<List<RemoteDocument>> listRemote({
     Duration timeout = const Duration(seconds: 10),
   }) async {
-    final res = await _client
-        .get(Uri.parse('$baseUrl/documents'))
+    final res = await _api.client
+        .get(_api.uri('/documents'), headers: _api.authOnlyHeaders)
         .timeout(timeout);
+    if (res.statusCode == 401 || res.statusCode == 403) {
+      throw UnauthorizedException();
+    }
     if (res.statusCode != 200) {
-      throw HttpException(
-        'List documents failed (${res.statusCode}): ${res.body}',
-      );
+      throw HttpException('List documents failed (${res.statusCode}): ${res.body}');
     }
     final raw = jsonDecode(res.body) as List;
     return raw
@@ -106,16 +97,17 @@ class DocumentsApiService {
   }
 
   Future<void> deleteRemote(String remoteId) async {
-    final uri = Uri.parse('$baseUrl/documents/$remoteId');
-    final res = await _client.delete(uri);
+    final res = await _api.client.delete(
+      _api.uri('/documents/$remoteId'),
+      headers: _api.authOnlyHeaders,
+    );
+    if (res.statusCode == 401 || res.statusCode == 403) {
+      throw UnauthorizedException();
+    }
     if (res.statusCode >= 300 && res.statusCode != 404) {
-      throw HttpException(
-        'Delete failed (${res.statusCode}): ${res.body}',
-      );
+      throw HttpException('Delete failed (${res.statusCode}): ${res.body}');
     }
   }
-
-  void dispose() => _client.close();
 }
 
 class RemoteDocument {
@@ -141,7 +133,6 @@ class RemoteDocument {
       );
 }
 
-/// Wraps a byte stream and reports cumulative bytes-sent to [onProgress].
 Stream<List<int>> _countingStream(
   Stream<List<int>> source,
   int total,

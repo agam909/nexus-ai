@@ -1,8 +1,7 @@
 import 'dart:convert';
 
-import 'package:http/http.dart' as http;
-
 import '../models/source_citation.dart';
+import 'api_client.dart';
 import 'chat_api_service.dart' show HttpException;
 
 class ConversationSummary {
@@ -34,7 +33,7 @@ class ConversationSummary {
 
 class StoredMessage {
   final String id;
-  final String role; // user | assistant
+  final String role;
   final String content;
   final List<SourceCitation> sources;
   final DateTime createdAt;
@@ -89,18 +88,19 @@ class ConversationDetail {
 }
 
 class ConversationsApiService {
-  ConversationsApiService({required this.baseUrl, http.Client? client})
-      : _client = client ?? http.Client();
+  ConversationsApiService({required ApiClient api}) : _api = api;
 
-  final String baseUrl;
-  final http.Client _client;
+  final ApiClient _api;
 
   Future<List<ConversationSummary>> list({
     Duration timeout = const Duration(seconds: 10),
   }) async {
-    final res = await _client
-        .get(Uri.parse('$baseUrl/conversations'))
+    final res = await _api.client
+        .get(_api.uri('/conversations'), headers: _api.authOnlyHeaders)
         .timeout(timeout);
+    if (res.statusCode == 401 || res.statusCode == 403) {
+      throw UnauthorizedException();
+    }
     if (res.statusCode != 200) {
       throw HttpException(
           'Conversations failed (${res.statusCode}): ${res.body}');
@@ -113,7 +113,13 @@ class ConversationsApiService {
   }
 
   Future<ConversationDetail> get(String id) async {
-    final res = await _client.get(Uri.parse('$baseUrl/conversations/$id'));
+    final res = await _api.client.get(
+      _api.uri('/conversations/$id'),
+      headers: _api.authOnlyHeaders,
+    );
+    if (res.statusCode == 401 || res.statusCode == 403) {
+      throw UnauthorizedException();
+    }
     if (res.statusCode != 200) {
       throw HttpException(
           'Conversation $id failed (${res.statusCode}): ${res.body}');
@@ -124,12 +130,16 @@ class ConversationsApiService {
   }
 
   Future<void> delete(String id) async {
-    final res = await _client.delete(Uri.parse('$baseUrl/conversations/$id'));
+    final res = await _api.client.delete(
+      _api.uri('/conversations/$id'),
+      headers: _api.authOnlyHeaders,
+    );
+    if (res.statusCode == 401 || res.statusCode == 403) {
+      throw UnauthorizedException();
+    }
     if (res.statusCode >= 300 && res.statusCode != 404) {
       throw HttpException(
           'Delete conversation failed (${res.statusCode}): ${res.body}');
     }
   }
-
-  void dispose() => _client.close();
 }

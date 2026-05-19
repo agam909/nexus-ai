@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 import '../models/source_citation.dart';
+import 'api_client.dart';
 
 class ChatResponse {
   final String answer;
@@ -18,17 +19,10 @@ class ChatResponse {
 }
 
 /// Thin client for the FastAPI RAG backend.
-///
-/// Expected backend contract:
-///   POST {baseUrl}/chat
-///   Body: { "message": str, "conversation_id": str | null, "history": [...] }
-///   Resp: { "answer": str, "sources": [{file_name, page, url?, snippet?}], "conversation_id": str }
 class ChatApiService {
-  ChatApiService({required this.baseUrl, http.Client? client})
-      : _client = client ?? http.Client();
+  ChatApiService({required ApiClient api}) : _api = api;
 
-  final String baseUrl;
-  final http.Client _client;
+  final ApiClient _api;
 
   Future<ChatResponse> sendMessage({
     required String message,
@@ -36,11 +30,10 @@ class ChatApiService {
     List<Map<String, String>> history = const [],
     Duration timeout = const Duration(seconds: 60),
   }) async {
-    final uri = Uri.parse('$baseUrl/chat');
-    final res = await _client
+    final res = await _api.client
         .post(
-          uri,
-          headers: const {'Content-Type': 'application/json'},
+          _api.uri('/chat'),
+          headers: _api.jsonHeaders,
           body: jsonEncode({
             'message': message,
             'conversation_id': conversationId,
@@ -49,6 +42,9 @@ class ChatApiService {
         )
         .timeout(timeout);
 
+    if (res.statusCode == 401 || res.statusCode == 403) {
+      throw UnauthorizedException();
+    }
     if (res.statusCode < 200 || res.statusCode >= 300) {
       throw HttpException(
         'Chat request failed (${res.statusCode}): ${res.body}',
@@ -68,30 +64,26 @@ class ChatApiService {
   }
 
   /// Streams an assistant reply token-by-token using ndjson.
-  /// The backend `/chat/stream` endpoint emits one JSON object per line:
-  ///   {"type":"meta","conversation_id":...,"sources":[...]}
-  ///   {"type":"token","value":"..."}
-  ///   {"type":"done"}
   Stream<ChatStreamEvent> streamMessage({
     required String message,
     String? conversationId,
     List<Map<String, String>> history = const [],
   }) async* {
-    final uri = Uri.parse('$baseUrl/chat/stream');
-    final req = http.Request('POST', uri);
-    req.headers['Content-Type'] = 'application/json';
+    final req = http.Request('POST', _api.uri('/chat/stream'));
+    _api.jsonHeaders.forEach((k, v) => req.headers[k] = v);
     req.body = jsonEncode({
       'message': message,
       'conversation_id': conversationId,
       'history': history,
     });
 
-    final streamed = await _client.send(req);
+    final streamed = await _api.client.send(req);
+    if (streamed.statusCode == 401 || streamed.statusCode == 403) {
+      throw UnauthorizedException();
+    }
     if (streamed.statusCode < 200 || streamed.statusCode >= 300) {
       final body = await streamed.stream.bytesToString();
-      throw HttpException(
-        'Stream failed (${streamed.statusCode}): $body',
-      );
+      throw HttpException('Stream failed (${streamed.statusCode}): $body');
     }
 
     String buffer = '';
@@ -129,8 +121,6 @@ class ChatApiService {
       }
     }
   }
-
-  void dispose() => _client.close();
 }
 
 enum ChatStreamType { meta, token, error, done }
@@ -163,6 +153,8 @@ class ChatStreamEvent {
   factory ChatStreamEvent.done() => const ChatStreamEvent._(ChatStreamType.done);
 }
 
+/// Legacy alias kept so other services that imported `HttpException` from here
+/// still work without modification.
 class HttpException implements Exception {
   final String message;
   HttpException(this.message);
