@@ -1,0 +1,41 @@
+# Render Blueprint - deploy with one click from the repo.
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: nexus-ai-backend
+    runtime: docker
+    plan: free
+    region: oregon
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      # Inject secrets via the Render dashboard (DO NOT commit them):
+      - key: GROQ_API_KEY
+        sync: false
+      - key: HF_API_TOKEN
+        sync: false
+      - key: QDRANT_URL
+        sync: false
+      - key: QDRANT_API_KEY
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      # Public, safe defaults:
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: HF_EMBEDDING_MODEL
+        value: sentence-transformers/all-MiniLM-L6-v2
+      - key: EMBEDDING_DIM
+        value: "384"
+      - key: QDRANT_COLLECTION
+        value: nexus_docs
+      - key: CORS_ORIGINS
+        value: "*"
+      - key: JWT_ALGORITHM
+        value: HS256
+      - key: JWT_EXPIRES_MINUTES
+        value: "43200"
